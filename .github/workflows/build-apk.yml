@@ -27,7 +27,7 @@ jobs:
       - name: Extract project
         run: |
           mkdir android
-          unzip -q Manga_AR_Android_Project_EXTRACT_ME.zip -d android
+          unzip -q Manga_AR_GitHub_READY.zip -d android
 
       - name: Install Gradle
         run: |
