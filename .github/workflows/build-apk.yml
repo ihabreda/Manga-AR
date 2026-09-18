@@ -2,6 +2,8 @@ name: Build Manga AR APK
 
 on:
   push:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -9,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -19,27 +22,93 @@ jobs:
           java-version: '17'
 
       - name: Setup Android SDK
-        run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+        uses: android-actions/setup-android@v3
 
-      - name: Extract project
+      - name: Find Android SDK
+        shell: bash
         run: |
-          mkdir android
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager 2>/dev/null | head -n 1)
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "ERROR: sdkmanager not found"
+            exit 1
+          fi
+
+          echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
+          echo "SDKMANAGER found at: $SDKMANAGER"
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          yes | "$SDKMANAGER" --licenses || true
+
+          "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+      - name: Extract Android project
+        shell: bash
+        run: |
+          mkdir -p android
+
           unzip -q Manga_AR_GitHub_READY.zip -d android
 
-      - name: Install Gradle
+          echo "Project files:"
+          find android -maxdepth 3 -type f | head -100
+
+      - name: Find Gradle project
+        shell: bash
         run: |
-          curl -L -o /tmp/gradle.zip https://services.gradle.org/distributions/gradle-8.10.2-bin.zip
+          SETTINGS=$(find android -name settings.gradle -o -name settings.gradle.kts | head -n 1)
+
+          if [ -z "$SETTINGS" ]; then
+            echo "ERROR: settings.gradle not found"
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$SETTINGS")
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+          echo "Gradle project found:"
+          echo "$PROJECT_DIR"
+
+      - name: Install Gradle
+        shell: bash
+        run: |
+          curl -L \
+            -o /tmp/gradle.zip \
+            https://services.gradle.org/distributions/gradle-8.10.2-bin.zip
+
           unzip -q /tmp/gradle.zip -d /tmp
+
           echo "/tmp/gradle-8.10.2/bin" >> "$GITHUB_PATH"
 
-      - name: Build APK
-        working-directory: android
-        run: gradle --no-daemon assembleDebug
+          gradle --version
+
+      - name: Build Debug APK
+        shell: bash
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          gradle --no-daemon assembleDebug
+
+      - name: Find APK
+        shell: bash
+        run: |
+          echo "Searching for APK..."
+
+          find android \
+            -type f \
+            -name "*.apk" \
+            -print
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Manga-AR-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            android/**/build/outputs/apk/debug/*.apk
